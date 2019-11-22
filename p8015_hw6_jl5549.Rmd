@@ -23,13 +23,14 @@ head(birthweight)
 ```{r}
 mymodel = lm(bwt~ wtgain*fincome, data = birthweight)
 summary(mymodel)
-#how a plot of model residuals against fitted values
+#a plot of model residuals against fitted values
 birthweight %>% 
   select(bwt, wtgain,fincome) %>% 
   add_predictions(mymodel) %>% 
   add_residuals(mymodel) %>% 
   ggplot(aes(x = resid, y = pred))+
-  geom_line(col = 'blue', alpha = 0.7)
+  geom_line(col = 'brown')
+broom::tidy(mymodel)
 ```
 
 ```{r}
@@ -47,17 +48,67 @@ cv_df=
     model2 = map(train, ~lm(bwt~blength+gaweeks, data = .)),
     model3 = map(train, ~lm(bwt~bhead*blength*babysex, data= .))
     ) %>% 
-  mutate(rmse1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
-    rmse2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)),
-         rmse3 = map2_dbl(model3, test, ~rmse(model = .x, data = .y)))
+  mutate(rmse_mymodel = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
+    rmse_model2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)),
+         rmse_model3 = map2_dbl(model3, test, ~rmse(model = .x, data = .y)))
 cv_df %>% 
   select(starts_with('rmse')) %>%
   pivot_longer(everything(),
     names_to = 'model',
                values_to = 'rmse',
-               names_prefix = 'rmse') %>% 
+               names_prefix = 'rmse_')%>% 
+  mutate(model= factor(model, levels = c('mymodel', 'model2', 'model3'))) %>% 
   ggplot(aes(x= model , y = rmse))+
   geom_violin()
+```
 
+## Problem 2
+```{r}
+#import the data
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+```{r}
+#boostrap datasets and build model for each
+weather_models = 
+weather_df %>% 
+  bootstrap(n = 5000) %>% 
+  mutate(models = map(strap, ~lm(tmax~tmin, data = .x))) 
+#tidy the models and extract statistics
+estimates = 
+  weather_models%>% 
+  mutate(results = map(models, broom::tidy)) %>% 
+  select(-models, -strap) %>% 
+  unnest(results) %>% 
+  pivot_wider(values_from = 'estimate',
+              names_from = 'term') %>%
+  janitor::clean_names() 
+#extract beta0 and beta1
+intercept = 
+  estimates %>% 
+   select(intercept, id) %>% 
+   drop_na()
+tmin = 
+  estimates %>% 
+   select(tmin, id) %>% 
+   drop_na()
+#calculate log(β̂ 0∗β̂ 1)
+beta = inner_join(intercept, tmin, by = "id") %>% 
+  mutate(log_beta01 = log(intercept*tmin))
+```
+  group_by(id) %>% 
+  mutate(intercept = sum(intercept),
+         tmax = sum(tmax)) %>% 
+  mutate(log_beta01 = log(intercept*tmax))
 ```
 
