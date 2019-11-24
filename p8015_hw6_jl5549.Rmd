@@ -21,7 +21,7 @@ head(birthweight)
 ```
 
 ```{r}
-mymodel =step(lm(bwt ~ ., data = birthweight), direction = "backward")
+mymodel =step(lm(bwt ~ ., data = birthweight), direction = "backward", k=log(nrow(birthweight)))
 summary(mymodel)
 #a plot of model residuals against fitted values
 birthweight %>% 
@@ -31,7 +31,11 @@ birthweight %>%
   geom_point(col = 'brown') +
   geom_line(stat = "smooth", method = "lm")
 broom::glance(mymodel)
+
 ```
+
+I used "Backward Elimination" method to build my model to remove the variable with  lowest significance every time.
+
 
 ```{r}
 cv_df =
@@ -41,16 +45,18 @@ cv_df =
     train = map(train, as_tibble),
     test = map(test, as_tibble)
   ) 
+#calculate there models' rmse
 cv_df= 
   cv_df%>% 
   mutate(
-    model1 = map(train, ~lm(bwt~ wtgain*fincome, data = .)),
+    model1 = map(train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks +  mrace + ppwt + smoken, data = .)),
     model2 = map(train, ~lm(bwt~blength+gaweeks, data = .)),
     model3 = map(train, ~lm(bwt~bhead*blength*babysex, data= .))
     ) %>% 
   mutate(rmse_mymodel = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
     rmse_model2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)),
          rmse_model3 = map2_dbl(model3, test, ~rmse(model = .x, data = .y)))
+#compare three models 
 cv_df %>% 
   select(starts_with('rmse')) %>%
   pivot_longer(everything(),
@@ -61,6 +67,8 @@ cv_df %>%
   ggplot(aes(x= model , y = rmse))+
   geom_violin()
 ```
+
+According to the violin plot above we can see my model has lowest rmse which means it does better in prediction than other two models. And model2 has highest rmse. It has lowest predictive accuracy.
 
 ## Problem 2
 ```{r}
@@ -112,6 +120,7 @@ beta %>%
   labs(x = 'log(estimated beta0 *estimated beta1)')
 ```
 
+
 ```{r}
 #2.5% and 97.5% quantiles
 q1_log_beta01= quantile(beta$log_beta01, 0.025)
@@ -124,6 +133,9 @@ CI_log_beta01 = c(mean_log_beta01 - qnorm(0.975)*se_log_beta01,
 CI_log_beta01
 ```
 
+The shape of log(estimated beta0 *estimated beta1) is close to normal. The mean is `r {mean_log_beta01}`.
+The CI  of log(beta0 * beta1)  is (`r {CI_log_beta01}`)
+
 ```{r}
 #find r^ 2
 r2 =   
@@ -135,6 +147,10 @@ r2 =
 r2 %>% 
   ggplot(aes(x = r_squared))+
   geom_density()
+```
+
+
+```{r}
 #2.5% and 97.5% quantiles
 q1_r2= quantile(r2$r_squared, 0.025)
 q2_r2= quantile(r2$r_squared, 0.975)
@@ -144,31 +160,8 @@ mean_rsquared = mean(r2$r_squared)
 CI_rsquared = c(mean_rsquared - qnorm(0.975)*se_rsquared,
                   mean_rsquared + qnorm(0.975)*se_rsquared)
 CI_rsquared
+
 ```
-#identify the rows for 2.5% and 97.5% quantiles
-row_q1 = 
-  beta %>% 
-  arrange(log_beta01) %>% 
-  .[round(length(.$log_beta01)*0.025),]
 
-row_q2 = 
-  beta %>% 
-  arrange(log_beta01) %>% 
-  .[round(length(.$log_beta01)*0.975),] 
-row_q1$id[1]
-# construct CIs
-
-data_q1 = 
-  weather_models %>% 
-  filter(.id == row_q1$id[1]) %>% 
-  pull(strap) %>% 
-  as.data.frame() 
-CI_q1=
-  data_q1 %>% 
-  c(mean(.$tmin)-qnorm(0.975)*sd(.$tmin)/sqrt(length(.$tmin)),
-   mean(.$tmin)+qnorm(0.975)*sd(.$tmin)/sqrt(length(.$tmin)))
-CI_2= 
-weather_models %>% 
-  filter(id == row_q2$id[1]) %>% 
-  c(mean(strap$tmin)-qnorm(0.975)*sd(strap$tmin)/sqrt(length(strap$tmin)),
-   mean(strap$tmin)+qnorm(0.975)*sd(strap$tmin)/sqrt(length(strap$tmin)))
+The shape of r^2 is close to normal. The mean is`r {mean_rsquared}`.
+The CI of r^2 is (`r {CI_rsquared}`)
