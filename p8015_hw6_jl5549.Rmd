@@ -21,16 +21,16 @@ head(birthweight)
 ```
 
 ```{r}
-mymodel = lm(bwt~ wtgain*fincome, data = birthweight)
+mymodel =step(lm(bwt ~ ., data = birthweight), direction = "backward")
 summary(mymodel)
 #a plot of model residuals against fitted values
 birthweight %>% 
-  select(bwt, wtgain,fincome) %>% 
   add_predictions(mymodel) %>% 
   add_residuals(mymodel) %>% 
-  ggplot(aes(x = resid, y = pred))+
-  geom_line(col = 'brown')
-broom::tidy(mymodel)
+  ggplot(aes(x = pred, y = resid))+
+  geom_point(col = 'brown') +
+  geom_line(stat = "smooth", method = "lm")
+broom::glance(mymodel)
 ```
 
 ```{r}
@@ -105,10 +105,70 @@ tmin =
 #calculate log(β̂ 0∗β̂ 1)
 beta = inner_join(intercept, tmin, by = "id") %>% 
   mutate(log_beta01 = log(intercept*tmin))
-```
-  group_by(id) %>% 
-  mutate(intercept = sum(intercept),
-         tmax = sum(tmax)) %>% 
-  mutate(log_beta01 = log(intercept*tmax))
+#distribution of log(β̂ 0∗β̂ 1)
+beta %>% 
+  ggplot(aes(x =log_beta01))+
+  geom_density()+
+  labs(x = 'log(estimated beta0 *estimated beta1)')
 ```
 
+```{r}
+#2.5% and 97.5% quantiles
+q1_log_beta01= quantile(beta$log_beta01, 0.025)
+q2_log_beta01 = quantile(beta$log_beta01, 0.975)
+# construct CIs
+se_log_beta01 = sd(beta$log_beta01)/sqrt(length(beta$log_beta01))
+mean_log_beta01 = mean(beta$log_beta01)
+CI_log_beta01 = c(mean_log_beta01 - qnorm(0.975)*se_log_beta01,
+                  mean_log_beta01 + qnorm(0.975)*se_log_beta01)
+CI_log_beta01
+```
+
+```{r}
+#find r^ 2
+r2 =   
+  weather_models%>% 
+  mutate(results = map(models, broom::glance)) %>% 
+  select(-models, -strap) %>% 
+  unnest(results) %>% 
+  janitor::clean_names()
+r2 %>% 
+  ggplot(aes(x = r_squared))+
+  geom_density()
+#2.5% and 97.5% quantiles
+q1_r2= quantile(r2$r_squared, 0.025)
+q2_r2= quantile(r2$r_squared, 0.975)
+# construct CIs
+se_rsquared = sd(r2$r_squared)/sqrt(length(r2$r_squared))
+mean_rsquared = mean(r2$r_squared)
+CI_rsquared = c(mean_rsquared - qnorm(0.975)*se_rsquared,
+                  mean_rsquared + qnorm(0.975)*se_rsquared)
+CI_rsquared
+```
+#identify the rows for 2.5% and 97.5% quantiles
+row_q1 = 
+  beta %>% 
+  arrange(log_beta01) %>% 
+  .[round(length(.$log_beta01)*0.025),]
+
+row_q2 = 
+  beta %>% 
+  arrange(log_beta01) %>% 
+  .[round(length(.$log_beta01)*0.975),] 
+row_q1$id[1]
+# construct CIs
+
+data_q1 = 
+  weather_models %>% 
+  filter(.id == row_q1$id[1]) %>% 
+  pull(strap) %>% 
+  as.data.frame() 
+CI_q1=
+  data_q1 %>% 
+  c(mean(.$tmin)-qnorm(0.975)*sd(.$tmin)/sqrt(length(.$tmin)),
+   mean(.$tmin)+qnorm(0.975)*sd(.$tmin)/sqrt(length(.$tmin)))
+CI_2= 
+weather_models %>% 
+  filter(id == row_q2$id[1]) %>% 
+  c(mean(strap$tmin)-qnorm(0.975)*sd(strap$tmin)/sqrt(length(strap$tmin)),
+   mean(strap$tmin)+qnorm(0.975)*sd(strap$tmin)/sqrt(length(strap$tmin)))
